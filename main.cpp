@@ -1,144 +1,98 @@
 #include <iostream>
-template <int ... values>
-struct IntList;
+
+/* Metaprogramming list of values. */
+template <int ... values> struct MetaList;
 template <int H, int ... T>
-struct IntList<H, T...>{
-    static const int Head = H;
-    using Tail = IntList<T...>;
+struct MetaList<H, T...>{
+    static constexpr int Head = H;
+    using Tail = MetaList<T...>;
 };
-template <>
-struct IntList<> {};
-template <int H, typename L>
-struct IntCons;
+template <int value>
+struct MetaList<value> {
+    static constexpr int Head = value;
+};
+
+
+/* Iterates over list and counts it's length. */
+template <typename TL>
+struct MetaListLength {
+    static constexpr int length = 1 + MetaListLength<typename TL::Tail>::length;
+};
+template <int lastValue>
+struct MetaListLength<MetaList<lastValue>>{ static constexpr int length = 1; };
+
+
+/* Combines all list values into one binary representation ( */
+template <typename TL>
+struct BinaryBackward {
+    static int const binary = (BinaryBackward<typename TL::Tail>::binary << 1) | TL::Head;
+};
+template <int lastBit>
+struct BinaryBackward<MetaList<lastBit>> { static const int binary = lastBit; };
+
+/* Prints list entities one by one. */
+template <typename TL>
+struct Print {
+    static void show() { std::cout << TL::Head << ' '; Print<typename TL::Tail>::show(); }
+};
+template <int lastValue>
+struct Print<MetaList<lastValue>> { static void show() { std::cout << lastValue << std::endl;; } };
+
+
+/* Adds one element in existing list. */
+template <int H, typename L> struct AddElement;
 template <int H, int ... Values>
-struct IntCons<H, IntList<Values...>> {
-    using type = IntList<H, Values...>;
-};
-template <typename L, int H>
-struct PushBack;
+struct AddElement<H, MetaList<Values...>> { using type = MetaList<H, Values...>; };
+
+
+/* Generates list of values from 0 to N-1. */
+template <typename L, int H> struct PushBack;
 template <int ... Values, int H>
-struct PushBack<IntList<Values...>, H> {
-    using type = IntList<Values..., H>;
-};
-template <int Len>
+struct PushBack<MetaList<Values...>, H> { using type = MetaList<Values..., H>; };
+template <int N>
 struct Generate {
-    using type = typename PushBack<typename Generate<Len - 1>::type, Len - 1>::type;
+    using type = typename PushBack<typename Generate<N - 1>::type, N - 1>::type;
 };
-template <>
-struct Generate <0> {
-    using type = IntList<>;
-};
+template <> struct Generate <0> { using type = MetaList<>; };
+
+
+/* Combines elements of two lists of equall sizes. */
 template <typename L1, typename L2, template <int...> class Func>
 struct Zip {
-    using type = typename IntCons<
+    using combinedList = typename AddElement<
             Func<L1::Head, L2::Head>::value,
-            typename Zip<typename L1::Tail, typename L2::Tail, Func>::type>::type;
+            typename Zip<typename L1::Tail, typename L2::Tail, Func>::combinedList>::type;
 };
-template <template <int...> class Func>
-struct Zip <IntList<>, IntList<>, Func> {
-    using type = IntList<>;
-};
-
+template <int lastL, int lastR, template <int...> class Func>
+struct Zip <MetaList<lastL>, MetaList<lastR>, Func> { using combinedList = MetaList<Func<lastL, lastR>::value>;};
 template<int a, int b>
-struct Plus
-{
-    static int const value = a + b;
-};
+struct MetaPlus { static int const value = a + b; };
 
-template<int a, int b>
-struct Minus
-{
-    static int const value = a - b;
-};
 
-template <typename L>
-class Quantity;
+int main() {
+    using valuesList = MetaList<10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20>;
+    std::cout << "List head: " << valuesList::Head << ", list tail: "; Print<valuesList::Tail>::show(); // 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
 
-template <int ... Ts>
-class Quantity<IntList<Ts...>> {
-public:
-    Quantity() = default;
-    explicit Quantity(double value) : value_(value){};
 
-    double value() const {
-        return value_;
-    }
+    std::cout << "List length: " << MetaListLength<valuesList>::length << std::endl; // 10
 
-private:
-    double value_;
-};
 
-template <int ... values>
-Quantity<IntList<values...>> operator+(
-        const Quantity<IntList<values...>>& left,
-        const Quantity<IntList<values...>>& right){
-    return Quantity<IntList<values...>>(left.value() + right.value());
+    using binaryList = MetaList<0, 1, 0, 1, 0, 1, 0, 1>;
+    std::cout << "To binary: " << std::bitset<8>(BinaryBackward<binaryList>::binary) << std::endl;
+
+
+    using extendedList = AddElement<9, valuesList>::type;
+    std::cout << "Extended list: "; Print<extendedList>::show();
+
+
+    using generatedList = Generate<11>::type;
+    std::cout << "Generated list: "; Print<generatedList>::show();
+
+
+    using listOne = MetaList<1, 2, 3, 4, 5>;
+    using listTwo = MetaList<10, 11, 12, 13, 14>;
+    using combinedList = Zip<listOne, listTwo, MetaPlus>::combinedList;
+    std::cout << "Combined list: "; Print<combinedList>::show();
 }
 
-template <int ... values>
-Quantity<IntList<values...>> operator-(
-        const Quantity<IntList<values...>>& left,
-        const Quantity<IntList<values...>>& right){
-    return Quantity<IntList<values...>>(left.value() - right.value());
-}
 
-template <int ... leftValues, int ... rightValues>
-auto operator* (
-        const Quantity<IntList<leftValues...>>& left,
-        const Quantity<IntList<rightValues...>>& right)
-        -> decltype(Quantity<typename Zip<IntList<leftValues...>, IntList<rightValues...>, Plus>::type>()){
-    return Quantity<typename Zip<
-            IntList<leftValues...>,
-                    IntList<rightValues...>,
-                            Plus>::type>(left.value() * right.value());
-}
-
-template <int ... leftValues, int ... rightValues>
-auto operator/ (
-        const Quantity<IntList<leftValues...>>& left,
-        const Quantity<IntList<rightValues...>>& right)
-        -> decltype(Quantity<typename Zip<IntList<leftValues...>, IntList<rightValues...>, Minus>::type>()){
-    return Quantity<typename Zip<
-            IntList<leftValues...>,
-            IntList<rightValues...>,
-            Minus>::type>(left.value() / right.value());
-}
-template <int ... values>
-auto operator* (
-        const Quantity<IntList<values...>>& elem, const double d)
-        -> decltype(Quantity<IntList<values...>>()){
-    return Quantity<IntList<values...>>(elem.value() * d);
-}
-template <int ... values>
-auto operator/ (
-        const Quantity<IntList<values...>>& elem, const double d)
-        -> decltype(Quantity<IntList<values...>>()){
-    return Quantity<IntList<values...>>(elem.value() / d);
-}
-template <int ... values>
-auto operator* (const double d, const Quantity<IntList<values...>>& elem)
--> decltype(Quantity<typename Zip<IntList<0, 0, 0, 0, 0, 0, 0>, IntList<values...>, Plus>::type>()){
-    return Quantity<typename Zip<
-            IntList<0, 0, 0, 0, 0, 0, 0>,
-                    IntList<values...>,
-                            Plus>::type>(elem.value() * d);
-}
-template <int ... values>
-auto operator/ (const double d, const Quantity<IntList<values...>>& elem)
--> decltype(Quantity<typename Zip<IntList<0, 0, 0, 0, 0, 0, 0>, IntList<values...>, Minus>::type>()){
-    return Quantity<typename Zip<
-            IntList<0, 0, 0, 0, 0, 0, 0>,
-            IntList<values...>,
-            Minus>::type>(elem.value() / d);
-}
-
-template<int m = 0, int kg = 0, int s = 0, int A = 0, int K = 0, int mol = 0, int cd = 0>
-using Dimension = IntList<m, kg, s, A, K, mol, cd>;
-
-using NumberQ   = Quantity<Dimension<>>;          // число без размерности
-using LengthQ   = Quantity<Dimension<1>>;          // метры
-using MassQ     = Quantity<Dimension<0, 1>>;       // килограммы
-using TimeQ     = Quantity<Dimension<0, 0, 1>>;    // секунды
-using VelocityQ = Quantity<Dimension<1, 0, -1>>;   // метры в секунду
-using AccelQ    = Quantity<Dimension<1, 0, -2>>;   // ускорение, метры в секунду в квадрате
-using ForceQ    = Quantity<Dimension<1, 1, -2>>;   // сила в ньютонах
